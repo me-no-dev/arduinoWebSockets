@@ -36,39 +36,52 @@
 class WebSocketsServer: private WebSockets {
 public:
 
+#ifdef __AVR__
+        typedef void (*WebSocketServerEvent)(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
+#else
         typedef std::function<void (uint8_t num, WStype_t type, uint8_t * payload, size_t length)> WebSocketServerEvent;
+#endif
 
         WebSocketsServer(uint16_t port, String origin = "", String protocol = "arduino");
         ~WebSocketsServer(void);
 
         void begin(void);
+
+#if (WEBSOCKETS_NETWORK_TYPE != NETWORK_ESP8266_ASYNC)
         void loop(void);
+#else
+        // Async interface not need a loop call
+        void loop(void) __attribute__ ((deprecated)) {}
+#endif
 
         void onEvent(WebSocketServerEvent cbEvent);
 
 
-        void sendTXT(uint8_t num, uint8_t * payload, size_t length = 0, bool headerToPayload = false);
-        void sendTXT(uint8_t num, const uint8_t * payload, size_t length = 0);
-        void sendTXT(uint8_t num, char * payload, size_t length = 0, bool headerToPayload = false);
-        void sendTXT(uint8_t num, const char * payload, size_t length = 0);
-        void sendTXT(uint8_t num, String payload);
+        bool sendTXT(uint8_t num, uint8_t * payload, size_t length = 0, bool headerToPayload = false);
+        bool sendTXT(uint8_t num, const uint8_t * payload, size_t length = 0);
+        bool sendTXT(uint8_t num, char * payload, size_t length = 0, bool headerToPayload = false);
+        bool sendTXT(uint8_t num, const char * payload, size_t length = 0);
+        bool sendTXT(uint8_t num, String & payload);
 
-        void broadcastTXT(uint8_t * payload, size_t length = 0, bool headerToPayload = false);
-        void broadcastTXT(const uint8_t * payload, size_t length = 0);
-        void broadcastTXT(char * payload, size_t length = 0, bool headerToPayload = false);
-        void broadcastTXT(const char * payload, size_t length = 0);
-        void broadcastTXT(String payload);
+        bool broadcastTXT(uint8_t * payload, size_t length = 0, bool headerToPayload = false);
+        bool broadcastTXT(const uint8_t * payload, size_t length = 0);
+        bool broadcastTXT(char * payload, size_t length = 0, bool headerToPayload = false);
+        bool broadcastTXT(const char * payload, size_t length = 0);
+        bool broadcastTXT(String & payload);
 
-        void sendBIN(uint8_t num, uint8_t * payload, size_t length, bool headerToPayload = false);
-        void sendBIN(uint8_t num, const uint8_t * payload, size_t length);
+        bool sendBIN(uint8_t num, uint8_t * payload, size_t length, bool headerToPayload = false);
+        bool sendBIN(uint8_t num, const uint8_t * payload, size_t length);
 
-        void broadcastBIN(uint8_t * payload, size_t length, bool headerToPayload = false);
-        void broadcastBIN(const uint8_t * payload, size_t length);
+        bool broadcastBIN(uint8_t * payload, size_t length, bool headerToPayload = false);
+        bool broadcastBIN(const uint8_t * payload, size_t length);
 
         void disconnect(void);
         void disconnect(uint8_t num);
 
-#if (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266)
+        void setAuthorization(const char * user, const char * password);
+        void setAuthorization(const char * auth);
+
+#if (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266) || (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266_ASYNC)
         IPAddress remoteIP(uint8_t num);
 #endif
 
@@ -76,6 +89,7 @@ protected:
         uint16_t _port;
         String _origin;
         String _protocol;
+        String _base64Authorization; ///< Base64 encoded Auth request
 
         WEBSOCKETS_NETWORK_SERVER_CLASS * _server;
 
@@ -83,19 +97,24 @@ protected:
 
         WebSocketServerEvent _cbEvent;
 
+        bool newClient(WEBSOCKETS_NETWORK_CLASS * TCPclient);
+
         void messageRecived(WSclient_t * client, WSopcode_t opcode, uint8_t * payload, size_t length);
 
         void clientDisconnect(WSclient_t * client);
         bool clientIsConnected(WSclient_t * client);
 
+#if (WEBSOCKETS_NETWORK_TYPE != NETWORK_ESP8266_ASYNC)
         void handleNewClients(void);
         void handleClientData(void);
+#endif
 
-        void handleHeader(WSclient_t * client);
+        void handleHeader(WSclient_t * client, String * headerLine);
+
 
         /**
-         * called if a non Websocket connection is comming in.
-         * Note: can be overrided
+         * called if a non Websocket connection is coming in.
+         * Note: can be override
          * @param client WSclient_t *  ptr to the client struct
          */
         virtual void handleNonWebsocketConnection(WSclient_t * client) {
@@ -108,6 +127,25 @@ protected:
                     "Sec-WebSocket-Version: 13\r\n"
                     "\r\n"
                     "This is a Websocket server only!");
+            clientDisconnect(client);
+        }
+
+        /**
+         * called if a non Authorization connection is coming in.
+         * Note: can be override
+         * @param client WSclient_t *  ptr to the client struct
+         */
+        virtual void handleAuthorizationFailed(WSclient_t *client) {
+
+            client->tcp->write("HTTP/1.1 401 Unauthorized\r\n"
+                    "Server: arduino-WebSocket-Server\r\n"
+                    "Content-Type: text/plain\r\n"
+                    "Content-Length: 45\r\n"
+                    "Connection: close\r\n"
+                    "Sec-WebSocket-Version: 13\r\n"
+                    "WWW-Authenticate: Basic realm=\"WebSocket Server\""
+                    "\r\n"
+                    "This Websocket server requires Authorization!");
             clientDisconnect(client);
         }
 
