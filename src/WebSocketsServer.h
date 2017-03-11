@@ -25,7 +25,6 @@
 #ifndef WEBSOCKETSSERVER_H_
 #define WEBSOCKETSSERVER_H_
 
-#include <Arduino.h>
 #include "WebSockets.h"
 
 #define WEBSOCKETS_SERVER_CLIENT_MAX  (5)
@@ -33,7 +32,7 @@
 
 
 
-class WebSocketsServer: private WebSockets {
+class WebSocketsServer: protected WebSockets {
 public:
 
 #ifdef __AVR__
@@ -81,6 +80,12 @@ public:
         bool broadcastBIN(uint8_t * payload, size_t length, bool headerToPayload = false);
         bool broadcastBIN(const uint8_t * payload, size_t length);
 
+        bool sendPing(uint8_t num, uint8_t * payload = NULL, size_t length = 0);
+        bool sendPing(uint8_t num, String & payload);
+
+        bool broadcastPing(uint8_t * payload = NULL, size_t length = 0);
+        bool broadcastPing(String & payload);
+
         void disconnect(void);
         void disconnect(uint8_t num);
 
@@ -108,7 +113,7 @@ protected:
 
         bool newClient(WEBSOCKETS_NETWORK_CLASS * TCPclient);
 
-        void messageReceived(WSclient_t * client, WSopcode_t opcode, uint8_t * payload, size_t length);
+        void messageReceived(WSclient_t * client, WSopcode_t opcode, uint8_t * payload, size_t length, bool fin);
 
         void clientDisconnect(WSclient_t * client);
         bool clientIsConnected(WSclient_t * client);
@@ -144,8 +149,7 @@ protected:
          * @param client WSclient_t *  ptr to the client struct
          */
         virtual void handleAuthorizationFailed(WSclient_t *client) {
-
-            client->tcp->write("HTTP/1.1 401 Unauthorized\r\n"
+        	 client->tcp->write("HTTP/1.1 401 Unauthorized\r\n"
                     "Server: arduino-WebSocket-Server\r\n"
                     "Content-Type: text/plain\r\n"
                     "Content-Length: 45\r\n"

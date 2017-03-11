@@ -1,7 +1,7 @@
 /*
- * WebSocketClient.ino
+ * WebSocketClientSocketIO.ino
  *
- *  Created on: 24.05.2015
+ *  Created on: 06.06.2016
  *
  */
 
@@ -20,19 +20,29 @@ WebSocketsClient webSocket;
 
 #define USE_SERIAL Serial1
 
+#define MESSAGE_INTERVAL 30000
+#define HEARTBEAT_INTERVAL 25000
+
+uint64_t messageTimestamp = 0;
+uint64_t heartbeatTimestamp = 0;
+bool isConnected = false;
+
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 
 
     switch(type) {
         case WStype_DISCONNECTED:
             USE_SERIAL.printf("[WSc] Disconnected!\n");
+            isConnected = false;
             break;
         case WStype_CONNECTED:
             {
                 USE_SERIAL.printf("[WSc] Connected to url: %s\n",  payload);
-				
+                isConnected = true;
+
 			    // send message to server when Connected
-				webSocket.sendTXT("Connected");
+                // socket.io upgrade confirmation message (required)
+				webSocket.sendTXT("5");
             }
             break;
         case WStype_TEXT:
@@ -76,7 +86,7 @@ void setup() {
         delay(100);
     }
 
-    webSocket.begin("192.168.0.123", 81);
+    webSocket.beginSocketIO("192.168.0.123", 81);
     //webSocket.setAuthorization("user", "Password"); // HTTP Basic Authorization
     webSocket.onEvent(webSocketEvent);
 
@@ -84,4 +94,20 @@ void setup() {
 
 void loop() {
     webSocket.loop();
+
+    if(isConnected) {
+
+        uint64_t now = millis();
+
+        if(now - messageTimestamp > MESSAGE_INTERVAL) {
+            messageTimestamp = now;
+            // example socket.io message with type "messageType" and JSON payload
+            webSocket.sendTXT("42[\"messageType\",{\"greeting\":\"hello\"}]");
+        }
+        if((now - heartbeatTimestamp) > HEARTBEAT_INTERVAL) {
+            heartbeatTimestamp = now;
+            // socket.io heartbeat message
+            webSocket.sendTXT("2");
+        }
+    }
 }

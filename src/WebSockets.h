@@ -25,9 +25,20 @@
 #ifndef WEBSOCKETS_H_
 #define WEBSOCKETS_H_
 
+#ifdef STM32_DEVICE
+#include <application.h>
+#define bit(b) (1UL << (b)) // Taken directly from Arduino.h
+#else
 #include <Arduino.h>
+#endif
 
+#include <functional>
+
+#ifdef DEBUG_ESP_PORT
+#define DEBUG_WEBSOCKETS(...) DEBUG_ESP_PORT.printf( __VA_ARGS__ )
+#else
 //#define DEBUG_WEBSOCKETS(...) os_printf( __VA_ARGS__ )
+#endif
 
 #ifndef DEBUG_WEBSOCKETS
 #define DEBUG_WEBSOCKETS(...)
@@ -37,9 +48,20 @@
 #ifdef ESP8266
 #define WEBSOCKETS_MAX_DATA_SIZE  (15*1024)
 #define WEBSOCKETS_USE_BIG_MEM
+#define GET_FREE_HEAP ESP.getFreeHeap()
+// moves all Header strings to Flash (~300 Byte)
+//#define WEBSOCKETS_SAVE_RAM
+#else
+#ifdef STM32_DEVICE
+#define WEBSOCKETS_MAX_DATA_SIZE  (15*1024)
+#define WEBSOCKETS_USE_BIG_MEM
+#define GET_FREE_HEAP System.freeMemory()
 #else
 //atmega328p has only 2KB ram!
 #define WEBSOCKETS_MAX_DATA_SIZE  (1024)
+// moves all Header strings to Flash
+#define WEBSOCKETS_SAVE_RAM
+#endif
 #endif
 
 #define WEBSOCKETS_TCP_TIMEOUT    (2000)
@@ -57,6 +79,7 @@
 #if defined(ESP8266) || defined(ESP31B)
 //#define WEBSOCKETS_NETWORK_TYPE NETWORK_ESP8266
 #define WEBSOCKETS_NETWORK_TYPE NETWORK_ESP8266_ASYNC
+//#define WEBSOCKETS_NETWORK_TYPE NETWORK_W5100
 #else
 #define WEBSOCKETS_NETWORK_TYPE NETWORK_W5100
 #endif
@@ -98,10 +121,15 @@
 
 #elif (WEBSOCKETS_NETWORK_TYPE == NETWORK_W5100)
 
+#ifdef STM32_DEVICE
+#define WEBSOCKETS_NETWORK_CLASS TCPClient
+#define WEBSOCKETS_NETWORK_SERVER_CLASS TCPServer
+#else
 #include <Ethernet.h>
 #include <SPI.h>
 #define WEBSOCKETS_NETWORK_CLASS EthernetClient
 #define WEBSOCKETS_NETWORK_SERVER_CLASS EthernetServer
+#endif
 
 #elif (WEBSOCKETS_NETWORK_TYPE == NETWORK_ENC28J60)
 
@@ -113,6 +141,12 @@
 #error "no network type selected!"
 #endif
 
+// moves all Header strings to Flash (~300 Byte)
+#ifdef WEBSOCKETS_SAVE_RAM
+#define WEBSOCKETS_STRING(var)  F(var)
+#else
+#define WEBSOCKETS_STRING(var)  var
+#endif
 
 typedef enum {
     WSC_NOT_CONNECTED,
@@ -125,7 +159,11 @@ typedef enum {
     WStype_DISCONNECTED,
     WStype_CONNECTED,
     WStype_TEXT,
-    WStype_BIN
+    WStype_BIN,
+	WStype_FRAGMENT_TEXT_START,
+	WStype_FRAGMENT_BIN_START,
+	WStype_FRAGMENT,
+	WStype_FRAGMENT_FIN,
 } WStype_t;
 
 typedef enum {
@@ -161,6 +199,8 @@ typedef struct {
 
         WEBSOCKETS_NETWORK_CLASS * tcp;
 
+        bool isSocketIO;    ///< client for socket.io server
+
 #if (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266)
         bool isSSL;             ///< run in ssl mode
         WiFiClientSecure * ssl;
@@ -172,6 +212,7 @@ typedef struct {
         bool cIsUpgrade;    ///< Connection == Upgrade
         bool cIsWebsocket;  ///< Upgrade == websocket
 
+        String cSessionId;  ///< client Set-Cookie (session id)
         String cKey;        ///< client Sec-WebSocket-Key
         String cAccept;     ///< client Sec-WebSocket-Accept
         String cProtocol;   ///< client Sec-WebSocket-Protocol
@@ -207,7 +248,7 @@ class WebSockets {
         virtual void clientDisconnect(WSclient_t * client);
         virtual bool clientIsConnected(WSclient_t * client);
 
-        virtual void messageReceived(WSclient_t * client, WSopcode_t opcode, uint8_t * payload, size_t length);
+        virtual void messageReceived(WSclient_t * client, WSopcode_t opcode, uint8_t * payload, size_t length, bool fin);
 
         void clientDisconnect(WSclient_t * client, uint16_t code, char * reason = NULL, size_t reasonLen = 0);
         bool sendFrame(WSclient_t * client, WSopcode_t opcode, uint8_t * payload = NULL, size_t length = 0, bool mask = false, bool fin = true, bool headerToPayload = false);

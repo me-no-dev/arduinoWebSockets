@@ -123,7 +123,7 @@ bool WebSockets::sendFrame(WSclient_t * client, WSopcode_t opcode, uint8_t * pay
 #ifdef WEBSOCKETS_USE_BIG_MEM
     // only for ESP since AVR has less HEAP
     // try to send data in one TCP package (only if some free Heap is there)
-    if(!headerToPayload && ((length > 0) && (length < 1400)) && (ESP.getFreeHeap() > 6000)) {
+    if(!headerToPayload && ((length > 0) && (length < 1400)) && (GET_FREE_HEAP > 6000)) {
         DEBUG_WEBSOCKETS("[WS][%d][sendFrame] pack to one TCP package...\n", client->num);
         uint8_t * dataPtr = (uint8_t *) malloc(length + WEBSOCKETS_MAX_HEADER_SIZE);
         if(dataPtr) {
@@ -296,7 +296,7 @@ bool WebSockets::handleWebsocketWaitFor(WSclient_t * client, size_t size) {
     }
 
     if(size > WEBSOCKETS_MAX_HEADER_SIZE) {
-        DEBUG_WEBSOCKETS("[WS][%d][handleWebsocketWaitFor] size: %d to big!\n", client->num, size);
+        DEBUG_WEBSOCKETS("[WS][%d][handleWebsocketWaitFor] size: %d too big!\n", client->num, size);
         return false;
     }
 
@@ -364,7 +364,7 @@ void WebSockets::handleWebsocketCb(WSclient_t * client) {
         }
 
         if(buffer[0] != 0 || buffer[1] != 0 || buffer[2] != 0 || buffer[3] != 0) {
-            // really to big!
+            // really too big!
             header->payloadLen = 0xFFFFFFFF;
         } else {
             header->payloadLen = buffer[4] << 24 | buffer[5] << 16 | buffer[6] << 8 | buffer[7];
@@ -377,7 +377,7 @@ void WebSockets::handleWebsocketCb(WSclient_t * client) {
     DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] mask: %u payloadLen: %u\n", client->num, header->mask, header->payloadLen);
 
     if(header->payloadLen > WEBSOCKETS_MAX_DATA_SIZE) {
-        DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] payload to big! (%u)\n", client->num, header->payloadLen);
+        DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] payload too big! (%u)\n", client->num, header->payloadLen);
         clientDisconnect(client, 1009);
         return;
     }
@@ -426,14 +426,15 @@ void WebSockets::handleWebsocketPayloadCb(WSclient_t * client, bool ok, uint8_t 
                 DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] text: %s\n", client->num, payload);
                 // no break here!
             case WSop_binary:
-                messageReceived(client, header->opCode, payload, header->payloadLen);
+            case WSop_continuation:
+                messageReceived(client, header->opCode, payload, header->payloadLen, header->fin);
                 break;
             case WSop_ping:
                 // send pong back
-                sendFrame(client, WSop_pong, payload, header->payloadLen);
+                sendFrame(client, WSop_pong, payload, header->payloadLen, true);
                 break;
             case WSop_pong:
-                DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] get pong  (%s)\n", client->num, payload);
+                DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] get pong (%s)\n", client->num, payload ? (const char*)payload : "");
                 break;
             case WSop_close: {
                 uint16_t reasonCode = 1000;
@@ -449,11 +450,7 @@ void WebSockets::handleWebsocketPayloadCb(WSclient_t * client, bool ok, uint8_t 
                 }
                 clientDisconnect(client, 1000);
             }
-                break;
-            case WSop_continuation:
-                // continuation is not supported
-                clientDisconnect(client, 1003);
-                break;
+            	break;
             default:
                 clientDisconnect(client, 1002);
                 break;
@@ -596,4 +593,3 @@ bool WebSockets::readCb(WSclient_t * client, uint8_t * out, size_t n, WSreadWait
 #endif
     return true;
 }
-
